@@ -16,9 +16,12 @@ import os
 import sys
 import importlib
 import inspect
+import json
 import py_trees
 import traceback
 import numpy as np
+import random
+import math
 
 import carla
 from agents.navigation.local_planner import RoadOption
@@ -48,6 +51,16 @@ from leaderboard.utils.route_manipulation import interpolate_trajectory
 
 import leaderboard.utils.parked_vehicles as parked_vehicles
 
+# lane detection
+from collections import deque
+
+LIFE_TIME = 10000
+
+lanes = [[], 
+         [], 
+         [], 
+         []]
+
 
 class RouteScenario(BasicScenario):
 
@@ -60,13 +73,14 @@ class RouteScenario(BasicScenario):
     INIT_THRESHOLD = 500 # Runtime initialization trigger distance to ego (m)
     PARKED_VEHICLES_INIT_THRESHOLD = INIT_THRESHOLD - 50 # Runtime initialization trigger distance to parked vehicles (m)
 
-    def __init__(self, world, config, debug_mode=0, criteria_enable=True):
+    def __init__(self, world, config, debug_mode=0, criteria_enable=True, json_path=''):
         """
         Setup all relevant parameters and create scenarios along route
         """
         self.client = CarlaDataProvider.get_client()
         self.config = config
         self.route = self._get_route(config)
+        self.route_length = len(self.route)
         self.world = world
         self.map = CarlaDataProvider.get_map()
         self.timeout = 10000
@@ -81,10 +95,27 @@ class RouteScenario(BasicScenario):
         self.list_scenarios = []
         self.occupied_parking_locations = []
         self.available_parking_locations = []
+        self.lanemarkings = LaneMarkings()
+        self.non_four_wheel_vehicles = [
+            "vehicle.bh.crossbike",
+            "vehicle.gazelle.omafiets",
+            "vehicle.vespa.zx125",
+            "vehicle.yamaha.yzf",
+            "vehicle.kawasaki.ninja",
+            "vehicle.diamondback.century",
+            "vehicle.harley-davidson.low_rider",
+            "vehicle.carlamotors",
+        ]
+
+        self.parking_available_vehicle = [\
+            bp for bp in CarlaDataProvider.get_world().get_blueprint_library().filter("vehicle.*")\
+            if True not in [bp.id.startswith(vehicle) for vehicle in self.non_four_wheel_vehicles]]
+
 
         scenario_configurations = self._filter_scenarios(config.scenario_configs)
         self.scenario_configurations = scenario_configurations
         self.missing_scenario_configurations = scenario_configurations.copy()
+        self.json_path = json_path
 
         ego_vehicle = self._spawn_ego_vehicle()
         if ego_vehicle is None:
@@ -106,6 +137,9 @@ class RouteScenario(BasicScenario):
         # Set runtime init mode. Do this after the first set of scenarios has been initialized!
         CarlaDataProvider.set_runtime_init_mode(True)
 
+        # self.camera_rgb_transform = [actor.get_transform() for actor in world.get_actors() if str(actor.id).startswith('Camera_Center')][0]
+
+
     def _get_route(self, config):
         """
         Gets the route from the configuration, interpolating it to the desired density,
@@ -118,7 +152,7 @@ class RouteScenario(BasicScenario):
         """
 
         # Prepare route's trajectory (interpolate and add the GPS route)
-        self.gps_route, self.route = interpolate_trajectory(config.keypoints)
+        self.gps_route, self.route, self.carla_waypoint = interpolate_trajectory(config.keypoints)
         return self.route
 
     def _filter_scenarios(self, scenario_configs):
@@ -225,12 +259,20 @@ class RouteScenario(BasicScenario):
             )
 
             # Add all vehicles that are close to the ego and in a free space
+            # 添加静态类型车辆  类型是static.prop.mesh
+            # if is_close(slot_transform.location, ego_location) and is_free(slot_transform.location):
+            #     mesh_bp = CarlaDataProvider.get_world().get_blueprint_library().filter("static.prop.mesh")[0]
+            #     mesh_bp.set_attribute("mesh_path", slot["mesh"])
+            #     mesh_bp.set_attribute("scale", "0.9")
+            #     new_parked_vehicles.append(carla.command.SpawnActor(mesh_bp, slot_transform))
+            #     self.available_parking_locations.remove(slot)
+
+            # 添加动态车辆 类型是vehicle 
             if is_close(slot_transform.location, ego_location) and is_free(slot_transform.location):
-                mesh_bp = CarlaDataProvider.get_world().get_blueprint_library().filter("static.prop.mesh")[0]
-                mesh_bp.set_attribute("mesh_path", slot["mesh"])
-                mesh_bp.set_attribute("scale", "0.9")
-                new_parked_vehicles.append(carla.command.SpawnActor(mesh_bp, slot_transform))
+                vehicle_bp = random.choice(self.parking_available_vehicle)
+                new_parked_vehicles.append(carla.command.SpawnActor(vehicle_bp, slot_transform))
                 self.available_parking_locations.remove(slot)
+
 
         # Add the actors to _parked_ids
         for response in CarlaDataProvider.get_client().apply_batch_sync(new_parked_vehicles):
@@ -248,32 +290,57 @@ class RouteScenario(BasicScenario):
 
             wp = w[0].location + carla.Location(z=vertical_shift)
 
-            if w[1] == RoadOption.LEFT:  # Yellow
+            if w[1] == RoadOption.LEFT:  # Yellow 左转路点：黄色
                 color = carla.Color(128, 128, 0)
-            elif w[1] == RoadOption.RIGHT:  # Cyan
+            elif w[1] == RoadOption.RIGHT:  # Cyan  右转路点：青色
                 color = carla.Color(0, 128, 128)
-            elif w[1] == RoadOption.CHANGELANELEFT:  # Orange
+            elif w[1] == RoadOption.CHANGELANELEFT:  # Orange 切换到左边车道：橙色
                 color = carla.Color(128, 32, 0)
-            elif w[1] == RoadOption.CHANGELANERIGHT:  # Dark Cyan
+            elif w[1] == RoadOption.CHANGELANERIGHT:  # Dark Cyan  切换到右边车道：深青色
                 color = carla.Color(0, 32, 128)
-            elif w[1] == RoadOption.STRAIGHT:  # Gray
+            elif w[1] == RoadOption.STRAIGHT:  # Gray  直行：灰色
                 color = carla.Color(64, 64, 64)
             else:  # LANEFOLLOW
-                color = carla.Color(0, 128, 0)  # Green
+                color = carla.Color(0, 128, 0)  # Green  沿着当前车道前进、无特殊操作：绿色
 
             self.world.debug.draw_point(wp, size=size, color=color, life_time=self.timeout)
 
+        # 路径起点：蓝色
         self.world.debug.draw_point(waypoints[0][0].location + carla.Location(z=vertical_shift), size=2*size,
                                     color=carla.Color(0, 0, 128), life_time=self.timeout)
+        # 路径终点：灰色
         self.world.debug.draw_point(waypoints[-1][0].location + carla.Location(z=vertical_shift), size=2*size,
                                     color=carla.Color(128, 128, 128), life_time=self.timeout)
+        
+        for new_waypoint in self.carla_waypoint:
+            lane_markings = self.lanemarkings.calculate3DLanepoints(new_waypoint)
+
+        # Draw all 3D lanemarkings in carla simulator
+        for i, color in enumerate(self.lanemarkings.colormap_carla):
+            for j in range(0, self.route_length - 1):
+                # self.lanemarkings.draw_lanes(self.world, lane_markings[i][j], lane_markings[i][j + 1], self.lanemarkings.colormap_carla[color])
+                # if (lane_markings[i][j] and lane_markings[i][j + 1]):
+                    # self.world.debug.draw_line(lane_markings[i][j], lane_markings[i][j + 1], thickness=0.05, 
+                    #     color=self.lanemarkings.colormap_carla[color], life_time=self.timeout, persistent_lines=False)
+                if (lane_markings[i][j]):
+                    point = lane_markings[i][j]['coords']
+                    carla_point = carla.Location(x=point[0], y=point[1], z=point[2])
+                    self.world.debug.draw_point(carla_point, size=0.05, life_time=self.timeout, persistent_lines=False, color=self.lanemarkings.colormap_carla[color])
+        
+        f = open(os.path.join(self.json_path, 'lanemarkings.json'), 'w', encoding='utf-8')
+        lane_dict = {'left_lane':lane_markings[0], 'right_lane':lane_markings[1], 'left_left_lane':lane_markings[2], 'right_right_lane':lane_markings[3]}
+        json.dump(lane_dict, f, indent=4)
+        f.write('\n')
+        f.flush()
+        f.close()
+
 
     def get_all_scenario_classes(self):
         """
         Searches through the 'scenarios' folder for all the Python classes
         """
         # Path of all scenario at "srunner/scenarios" folder
-        scenarios_list = glob.glob("{}/srunner/scenarios/*.py".format(os.getenv('SCENARIO_RUNNER_ROOT', "./")))
+        scenarios_list = glob.glob("{}/srunner/scenarios/*.py".format(os.getenv('SCENARIO_RUNNER_ROOT').replace('\\', '/')))
 
         all_scenario_classes = {}
 
@@ -330,6 +397,7 @@ class RouteScenario(BasicScenario):
                     if debug:
                         scenario_loc = scenario_config.trigger_points[0].location
                         debug_loc = self.map.get_waypoint(scenario_loc).transform.location + carla.Location(z=0.2)
+                        # 标记场景触发点及名称 触发点红色、名称蓝色
                         self.world.debug.draw_point(
                             debug_loc, size=0.2, color=carla.Color(128, 0, 0), life_time=self.timeout
                         )
@@ -492,3 +560,91 @@ class RouteScenario(BasicScenario):
         """
         self.client.apply_batch([carla.command.DestroyActor(x) for x in self._parked_ids])
         self.remove_all_actors()
+
+
+
+class LaneMarkings():
+    """
+    Helper class to detect and draw lanemarkings in carla.
+    """
+    def __init__(self):
+        
+        self.colormap_carla = {'green': carla.Color(0, 255, 0),
+                               'red': carla.Color(255, 0, 0),
+                               'yellow': carla.Color(255, 255, 0),
+                               'blue': carla.Color(0, 0, 255)}
+        
+        # carla.LaneMarkingType枚举类数值到字符串的映射
+        self.lane_num_to_str = {
+            0:'Other',
+            1:'Broken',
+            2:'Solid',
+            3:'SolidSolid',
+            4:'SolidBroken',
+            5:'BrokenSolid',
+            6:'BrokenBroken',
+            7:'BottsDots',
+            8:'Grass',
+            9:'Curb',
+            10:'None',
+        }
+    
+    def vector_to_list(self, vector3d):
+        return [vector3d.x, vector3d.y, vector3d.z]
+            
+    
+    def calculate3DLanepoints(self, lanepoint):
+        """
+        Calculates the 3-dimensional position of the lane from the lanepoint from the informations given. 
+        The information analyzed is the lanemarking type, the lane type and for the calculation the 
+        lanepoint (the middle of the actual lane), the lane width and the driving direction of the lanepoint. 
+        In addition to the Lanemarking position, the function does also calculate the position of respectively 
+        adjacent lanes. The actual implementation includes contra flow lanes.
+        
+        Args:
+            lanepoint: carla.Waypoint. The lanepoint, of wich the lanemarkings should be calculated.
+
+        Returns:
+            lanes: list of 4 lanelists. 3D-positions of every lanemarking of the given lanepoints actual lane, and corresponding neighbour lanes if they exist.
+        """
+        # 获取当前车道前向向量
+        orientationVec = lanepoint.transform.get_forward_vector()
+        
+        length = math.sqrt(orientationVec.y*orientationVec.y+orientationVec.x*orientationVec.x)
+        abVec = carla.Location(orientationVec.y,-orientationVec.x,0) / length * 0.5* lanepoint.lane_width
+        # 得到左右车道标记位置
+        right_lanemarking = lanepoint.transform.location - abVec 
+        left_lanemarking = lanepoint.transform.location + abVec
+        # 车道方向判断：.get_right_lane().transform.rotation == .get_right_lane().transform.rotation
+        
+
+        # 左右车道只要存在carla标记则加入
+        lanes[0].append({'type':self.lane_num_to_str[int(lanepoint.left_lane_marking.type)], 'coords':self.vector_to_list(left_lanemarking)}) if(lanepoint.left_lane_marking.type != carla.LaneMarkingType.NONE) else lanes[0].append(None)
+        lanes[1].append({'type':self.lane_num_to_str[int(lanepoint.right_lane_marking.type)], 'coords':self.vector_to_list(right_lanemarking)}) if(lanepoint.right_lane_marking.type != carla.LaneMarkingType.NONE) else lanes[1].append(None)  
+    
+        # Calculate remaining outer lanes (left and right).
+        # 再次向外计算一个车道标记位置
+        if(lanepoint.get_left_lane() and lanepoint.get_left_lane().left_lane_marking.type != carla.LaneMarkingType.NONE):
+            outer_left_lanemarking  = lanepoint.transform.location + 3 * abVec
+            lanes[2].append({'type':self.lane_num_to_str[int(lanepoint.get_left_lane().left_lane_marking.type)], 'coords':self.vector_to_list(outer_left_lanemarking)})
+        else:
+            lanes[2].append(None)
+
+        if(lanepoint.get_right_lane() and lanepoint.get_right_lane().right_lane_marking.type != carla.LaneMarkingType.NONE):
+            outer_right_lanemarking = lanepoint.transform.location - 3 * abVec
+            lanes[3].append({'type':self.lane_num_to_str[int(lanepoint.get_right_lane().right_lane_marking.type)], 'coords':self.vector_to_list(outer_right_lanemarking)})
+        else:
+            lanes[3].append(None)
+
+        # lanes： 左一车道标记，右一车道标记，左二车道标记，右二车道标记
+        return lanes
+
+    def draw_points(self, world, point):
+        world.debug.draw_point(point + carla.Location(z=0.05), size=0.5, life_time=LIFE_TIME)    
+    
+    
+    def draw_lanes(self, world, point0, point1, color):
+        if(point0 and point1):
+            world.debug.draw_line(point0 + carla.Location(z=0.05), point1 + carla.Location(z=0.05), thickness=0.5, 
+                color=color, life_time=LIFE_TIME)
+            self.draw_points(world, point0)

@@ -23,19 +23,10 @@ from leaderboard.autoagents.autonomous_agent import Track
 from leaderboard.autoagents.ros_base_agent import ROSBaseAgent
 
 MAX_ALLOWED_RADIUS_SENSOR = 3.0
-QUALIFIER_SENSORS_LIMITS = {
+SENSORS_LIMITS = {
     'sensor.camera.rgb': 4,
     'sensor.lidar.ray_cast': 1,
     'sensor.other.radar': 2,
-    'sensor.other.gnss': 1,
-    'sensor.other.imu': 1,
-    'sensor.opendrive_map': 1,
-    'sensor.speedometer': 1
-}
-SENSORS_LIMITS = {
-    'sensor.camera.rgb': 8,
-    'sensor.lidar.ray_cast': 2,
-    'sensor.other.radar': 4,
     'sensor.other.gnss': 1,
     'sensor.other.imu': 1,
     'sensor.opendrive_map': 1,
@@ -82,40 +73,36 @@ def validate_sensor_configuration(sensors, agent_track, selected_track):
             raise SensorConfigurationInvalid("Duplicated sensor tag [{}]".format(sensor_id))
         else:
             sensor_ids.append(sensor_id)
+    
+    # 跳过传感器数量检查
+    #     # Check if the sensor is valid
+    #     if agent_track == Track.SENSORS:
+    #         if sensor['type'].startswith('sensor.opendrive_map'):
+    #             raise SensorConfigurationInvalid("Illegal sensor 'sensor.opendrive_map' used for Track [{}]!".format(agent_track))
 
-        # Check if the sensor is valid
-        if agent_track == Track.SENSORS:
-            if sensor['type'].startswith('sensor.opendrive_map'):
-                raise SensorConfigurationInvalid("Illegal sensor 'sensor.opendrive_map' used for Track [{}]!".format(agent_track))
+    #     # Check the sensors validity
+    #     if sensor['type'] not in ALLOWED_SENSORS:
+    #         raise SensorConfigurationInvalid("Illegal sensor '{}' used for Track [{}]!".format(sensor['type'], agent_track))
 
-        # Check the sensors validity
-        if sensor['type'] not in ALLOWED_SENSORS:
-            raise SensorConfigurationInvalid("Illegal sensor '{}' used for Track [{}]!".format(sensor['type'], agent_track))
+    #     # Check the extrinsics of the sensor
+    #     if 'x' in sensor and 'y' in sensor and 'z' in sensor:
+    #         if math.sqrt(sensor['x']**2 + sensor['y']**2 + sensor['z']**2) > MAX_ALLOWED_RADIUS_SENSOR:
+    #             raise SensorConfigurationInvalid(
+    #                 "Illegal sensor extrinsics used for sensor '{}'. Max allowed radius is {}m".format(sensor['id'], MAX_ALLOWED_RADIUS_SENSOR))
 
-        # Check the extrinsics of the sensor
-        if 'x' in sensor and 'y' in sensor and 'z' in sensor:
-            if math.sqrt(sensor['x']**2 + sensor['y']**2 + sensor['z']**2) > MAX_ALLOWED_RADIUS_SENSOR:
-                raise SensorConfigurationInvalid(
-                    "Illegal sensor extrinsics used for sensor '{}'. Max allowed radius is {}m".format(sensor['id'], MAX_ALLOWED_RADIUS_SENSOR))
+    #     # Check the amount of sensors
+    #     if sensor['type'] in sensor_count:
+    #         sensor_count[sensor['type']] += 1
+    #     else:
+    #         sensor_count[sensor['type']] = 1
 
-        # Check the amount of sensors
-        if sensor['type'] in sensor_count:
-            sensor_count[sensor['type']] += 1
-        else:
-            sensor_count[sensor['type']] = 1
-
-    if agent_track in (Track.SENSORS_QUALIFIER, Track.MAP_QUALIFIER):
-        sensor_limits = SENSORS_LIMITS
-    else:
-        sensor_limits = QUALIFIER_SENSORS_LIMITS
-
-    for sensor_type, max_instances_allowed in sensor_limits.items():
-        if sensor_type in sensor_count and sensor_count[sensor_type] > max_instances_allowed:
-            raise SensorConfigurationInvalid(
-                "Too many {} used! "
-                "Maximum number allowed is {}, but {} were requested.".format(sensor_type,
-                                                                              max_instances_allowed,
-                                                                              sensor_count[sensor_type]))
+    # for sensor_type, max_instances_allowed in SENSORS_LIMITS.items():
+    #     if sensor_type in sensor_count and sensor_count[sensor_type] > max_instances_allowed:
+    #         raise SensorConfigurationInvalid(
+    #             "Too many {} used! "
+    #             "Maximum number allowed is {}, but {} were requested.".format(sensor_type,
+    #                                                                           max_instances_allowed,
+    #                                                                           sensor_count[sensor_type]))
 
 
 class AgentWrapper(object):
@@ -166,16 +153,21 @@ class AgentWrapper(object):
                                              yaw=sensor_spec['yaw'])
 
         elif type_ == 'sensor.lidar.ray_cast':
-            attributes['range'] = str(85)
-            attributes['rotation_frequency'] = str(10)
-            attributes['channels'] = str(64)
-            attributes['upper_fov'] = str(10)
-            attributes['lower_fov'] = str(-30)
-            attributes['points_per_second'] = str(600000)
-            attributes['atmosphere_attenuation_rate'] = str(0.004)
-            attributes['dropoff_general_rate'] = str(0.45)
-            attributes['dropoff_intensity_limit'] = str(0.8)
-            attributes['dropoff_zero_intensity'] = str(0.4)
+            attributes['range'] = str(200)
+            attributes['rotation_frequency'] = str(20)
+            attributes['channels'] = str(128)
+            attributes['upper_fov'] = str(15)
+            attributes['lower_fov'] = str(-25)        
+            attributes['points_per_second'] = str(6910000)
+            attributes['atmosphere_attenuation_rate'] = str(0.0)
+            # attributes['atmosphere_attenuation_rate'] = str(0.004)
+            # attributes['dropoff_general_rate'] = str(0.45)
+            # attributes['dropoff_intensity_limit'] = str(0.8)
+            # attributes['dropoff_zero_intensity'] = str(0.4)
+            attributes['dropoff_general_rate'] = str(0.0)
+            attributes['dropoff_intensity_limit'] = str(0.0)
+            attributes['dropoff_zero_intensity'] = str(0.0)
+
 
             sensor_location = carla.Location(x=sensor_spec['x'], y=sensor_spec['y'],
                                              z=sensor_spec['z'])
@@ -223,6 +215,35 @@ class AgentWrapper(object):
             sensor_rotation = carla.Rotation(pitch=sensor_spec['pitch'],
                                              roll=sensor_spec['roll'],
                                              yaw=sensor_spec['yaw'])
+        
+        elif type_ == 'sensor.other.imu':
+            attributes['noise_accel_stddev_x'] = str(0.001)
+            attributes['noise_accel_stddev_y'] = str(0.001)
+            attributes['noise_accel_stddev_z'] = str(0.015)
+            attributes['noise_gyro_stddev_x'] = str(0.001)
+            attributes['noise_gyro_stddev_y'] = str(0.001)
+            attributes['noise_gyro_stddev_z'] = str(0.001)
+
+            sensor_location = carla.Location(x=sensor_spec['x'],
+                                             y=sensor_spec['y'],
+                                             z=sensor_spec['z'])
+            sensor_rotation = carla.Rotation(pitch=sensor_spec['pitch'],
+                                             roll=sensor_spec['roll'],
+                                             yaw=sensor_spec['yaw'])
+        
+        elif type_ == 'sensor.camera.semantic_segmentation':
+            # 语义分割相机
+            attributes['image_size_x'] = str(sensor_spec['width'])
+            attributes['image_size_y'] = str(sensor_spec['height'])
+            attributes['fov'] = str(sensor_spec['fov'])
+
+            sensor_location = carla.Location(x=sensor_spec['x'], y=sensor_spec['y'],
+                                             z=sensor_spec['z'])
+            sensor_rotation = carla.Rotation(pitch=sensor_spec['pitch'],
+                                             roll=sensor_spec['roll'],
+                                             yaw=sensor_spec['yaw'])
+        
+        
         sensor_transform = carla.Transform(sensor_location, sensor_rotation)
 
         return type_, id_, sensor_transform, attributes
@@ -242,7 +263,7 @@ class AgentWrapper(object):
             if type_ == 'sensor.opendrive_map':
                 sensor = OpenDriveMapReader(vehicle, attributes['reading_frequency'])
             elif type_ == 'sensor.speedometer':
-                sensor = SpeedometerReader(vehicle, attributes['reading_frequency'])
+                sensor = SpeedometerReader(vehicle, attributes['reading_frequency'], world)
 
             # These are the sensors spawned on the carla world
             else:

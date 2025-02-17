@@ -149,6 +149,7 @@ def interpolate_trajectory(waypoints_trajectory, hop_resolution=1.0):
 
     route = []
     gps_route = []
+    carla_waypoint = []
 
     for i in range(len(waypoints_trajectory) - 1):
 
@@ -156,8 +157,9 @@ def interpolate_trajectory(waypoints_trajectory, hop_resolution=1.0):
         waypoint_next = waypoints_trajectory[i + 1]
         interpolated_trace = grp.trace_route(waypoint, waypoint_next)
         for wp, connection in interpolated_trace:
+            carla_waypoint.append(wp)
             route.append((wp.transform, connection))
             gps_coord = _location_to_gps(lat_ref, lon_ref, wp.transform.location)
             gps_route.append((gps_coord, connection))
 
-    return gps_route, route
+    return gps_route, route, carla_waypoint

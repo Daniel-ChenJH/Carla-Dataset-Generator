@@ -42,7 +42,8 @@ sensors_to_icons = {
     'sensor.other.gnss':        'carla_gnss',
     'sensor.other.imu':         'carla_imu',
     'sensor.opendrive_map':     'carla_opendrive_map',
-    'sensor.speedometer':       'carla_speedometer'
+    'sensor.speedometer':       'carla_speedometer',
+    'sensor.camera.semantic_segmentation': 'carla_camera_semantic_segmentation',
 }
 
 class LeaderboardEvaluator(object):
@@ -175,7 +176,7 @@ class LeaderboardEvaluator(object):
             synchronous_mode = True,
             fixed_delta_seconds = 1.0 / self.frame_rate,
             deterministic_ragdolls = True,
-            spectator_as_ego = False
+            # spectator_as_ego = False
         )
         client.get_world().apply_settings(settings)
 
@@ -263,7 +264,14 @@ class LeaderboardEvaluator(object):
         # Load the world and the scenario
         try:
             self._load_and_wait_for_world(args, config.town)
-            self.route_scenario = RouteScenario(world=self.world, config=config, debug_mode=args.debug)
+            self.record_filepath = os.getcwd()
+            if 'record_data' not in os.listdir(self.record_filepath):
+                os.mkdir(self.record_filepath + '/record_data')
+            bias = len(os.listdir(self.record_filepath + '/record_data')) + 1
+            self.record_filepath = self.record_filepath + '/record_data/runs' + str(bias) + '/'
+            os.mkdir(self.record_filepath)
+
+            self.route_scenario = RouteScenario(world=self.world, config=config, debug_mode=args.debug, json_path=self.record_filepath)
             self.statistics_manager.set_scenario(self.route_scenario)
 
         except Exception:
@@ -291,6 +299,7 @@ class LeaderboardEvaluator(object):
                 self._ros1_server = ROS1Server()
                 self._ros1_server.start()
 
+            # 获取到了agent实例并实例化
             self.agent_instance = agent_class_obj(args.host, args.port, args.debug)
             self.agent_instance.set_global_plan(self.route_scenario.gps_route, self.route_scenario.route)
             self.agent_instance.setup(args.agent_config)
@@ -439,7 +448,7 @@ def main():
                         help='Set the CARLA client timeout value in seconds')
 
     # simulation setup
-    parser.add_argument('--routes', required=True,
+    parser.add_argument('--routes',
                         help='Name of the routes file to be executed.')
     parser.add_argument('--routes-subset', default='', type=str,
                         help='Execute a specific set of routes')
@@ -448,7 +457,7 @@ def main():
 
     # agent-related options
     parser.add_argument("-a", "--agent", type=str,
-                        help="Path to Agent's py file to evaluate", required=True)
+                        help="Path to Agent's py file to evaluate")
     parser.add_argument("--agent-config", type=str,
                         help="Path to Agent's configuration file", default="")
 
@@ -462,6 +471,15 @@ def main():
                         help="Path to checkpoint used for saving live results")
 
     arguments = parser.parse_args()
+
+    arguments.routes = 'data/routes_training.xml'
+    arguments.repetitions = 1
+    arguments.track = 'SENSORS'
+    arguments.checkpoint = 'results.json'
+    arguments.agent = 'leaderboard/autoagents/human_agent.py'
+    arguments.debug = 1
+
+    assert arguments.routes and arguments.agent
 
     statistics_manager = StatisticsManager(arguments.checkpoint, arguments.debug_checkpoint)
     leaderboard_evaluator = LeaderboardEvaluator(arguments, statistics_manager)

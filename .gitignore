@@ -5,3 +5,4 @@
 .pydevproject
 *.sh
 *.xml
+record_data/

@@ -60,18 +60,18 @@ class HumanInterface(object):
         """
 
         # Process sensor data
-        image_center = input_data['Center'][1][:, :, -2::-1]
+        image_center = input_data['Camera_Center'][1][:, :, -2::-1]
         self._surface = pygame.surfarray.make_surface(image_center.swapaxes(0, 1))
 
         # Add the left mirror
         if self._left_mirror:
-            image_left = input_data['Left'][1][:, :, -2::-1]
+            image_left = input_data['Camera_Left'][1][:, :, -2::-1]
             left_surface = pygame.surfarray.make_surface(image_left.swapaxes(0, 1))
             self._surface.blit(left_surface, (0, (1 - self._scale) * self._height))
 
         # Add the right mirror
         if self._right_mirror:
-            image_right = input_data['Right'][1][:, :, -2::-1]
+            image_right = input_data['Camera_Right'][1][:, :, -2::-1]
             right_surface = pygame.surfarray.make_surface(image_right.swapaxes(0, 1))
             self._surface.blit(right_surface, ((1 - self._scale) * self._width, (1 - self._scale) * self._height))
 
@@ -111,8 +111,8 @@ class HumanAgent(AutonomousAgent):
         self.camera_width = 1280
         self.camera_height = 720
         self._side_scale = 0.3
-        self._left_mirror = False
-        self._right_mirror = False
+        self._left_mirror = True
+        self._right_mirror = True
 
         self._hic = HumanInterface(
             self.camera_width,
@@ -146,20 +146,41 @@ class HumanAgent(AutonomousAgent):
 
         sensors = [
             {'type': 'sensor.camera.rgb', 'x': 0.7, 'y': 0.0, 'z': 1.60, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-             'width': self.camera_width, 'height': self.camera_height, 'fov': 100, 'id': 'Center'},
+             'width': self.camera_width, 'height': self.camera_height, 'fov': 100, 'id': 'Camera_Center'},
         ]
 
         if self._left_mirror:
             sensors.append(
                 {'type': 'sensor.camera.rgb', 'x': 0.7, 'y': -1.0, 'z': 1, 'roll': 0.0, 'pitch': 0.0, 'yaw': 210.0,
                  'width': self.camera_width * self._side_scale, 'height': self.camera_height * self._side_scale,
-                 'fov': 100, 'id': 'Left'})
+                 'fov': 100, 'id': 'Camera_Left'})
 
         if self._right_mirror:
             sensors.append(
                 {'type': 'sensor.camera.rgb', 'x': 0.7, 'y': 1.0, 'z': 1, 'roll': 0.0, 'pitch': 0.0, 'yaw': 150.0,
                  'width': self.camera_width * self._side_scale, 'height': self.camera_height * self._side_scale,
-                 'fov': 100, 'id': 'Right'})
+                 'fov': 100, 'id': 'Camera_Right'})
+
+        sensors.append({'type': 'sensor.lidar.ray_cast', 'x': 0.0, 'y': 0.0, 'z': 3.0, 'yaw': 0.0, 'pitch': 0.0, 'roll': 0.0,
+             'id': 'LIDAR'})
+
+        sensors.append({'type': 'sensor.other.radar', 'x': 0.7, 'y': 0.0, 'z': 1.60, 'yaw': 0.0, 'pitch': 0.0, 'roll': 0.0,
+              'horizontal_fov': 30.0, 'vertical_fov': 120.0, 'id': 'RADAR'})
+
+        sensors.append({'type': 'sensor.other.gnss', 'x': 0.7, 'y': 0.0, 'z': 1.60, 'yaw': 0.0, 'pitch': 0.0, 'roll': 0.0,
+             'id': 'GNSS'})
+
+        sensors.append({'type': 'sensor.other.imu', 'x': 0.7, 'y': 0.0, 'z': 1.60, 'yaw': 0.0, 'pitch': 0.0, 'roll': 0.0,
+             'id': 'IMU'})
+
+        sensors.append({'type': 'sensor.speedometer', 'x': 0.7, 'y': 0.0, 'z': 1.60, 'yaw': 0.0, 'pitch': 0.0, 'roll': 0.0,
+             'id': 'SPEEDOMETER'})
+        
+        # 语义分割相机
+        sensors.append(
+            {'type': 'sensor.camera.semantic_segmentation', 'x': 0.7, 'y': 0.0, 'z': 1.60, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+             'width': self.camera_width, 'height': self.camera_height, 'fov': 100, 'id': 'Segment_Camera'})
+        
 
         return sensors
 
@@ -197,6 +218,12 @@ class KeyboardControl(object):
         self._control = carla.VehicleControl()
         self._steer_cache = 0.0
         self._clock = pygame.time.Clock()
+
+        json_path = r'E:\CARLA\WindowsNoEditor\leaderboard_0426\ego_vehicle_behavior\RouteScenario_1_rep0.json'
+        f = open(json_path, 'r', encoding='utf-8')
+        content = f.read()
+        self.record_dict = json.loads(content)
+        self.record_index = 11
 
         # Get the mode
         if path_to_conf_file:
@@ -245,13 +272,25 @@ class KeyboardControl(object):
         if self._mode == "playback":
             self._parse_json_control()
         else:
-            self._parse_vehicle_keys(pygame.key.get_pressed(), timestamp*1000)
+            # self._parse_vehicle_keys(pygame.key.get_pressed(), timestamp*1000)
+            self._parse_routescenario_control()
 
         # Record the control
         if self._mode == "log":
             self._record_control()
 
         return self._control
+
+    def _parse_routescenario_control(self):
+        if self.record_index < len(self.record_dict) + 1:
+            control = self.record_dict[str(self.record_index)]
+            self._control.steer = control['steering']
+            self._control.throttle = control['throttle']
+            self._control.brake = control['brake']
+            self._control.hand_brake = control['handbrake']
+            self._control.gear = control['gear']
+            self._control.reverse = (control['gear'] < 0)
+            self.record_index += 1
 
     def _parse_vehicle_keys(self, keys, milliseconds):
         """
@@ -282,6 +321,12 @@ class KeyboardControl(object):
         self._control.steer = round(self._steer_cache, 1)
         self._control.brake = 1.0 if keys[K_DOWN] or keys[K_s] else 0.0
         self._control.hand_brake = keys[K_SPACE]
+
+        # self._control.steer = 1
+        # self._control.throttle = 0.8
+
+
+
 
     def _parse_json_control(self):
 

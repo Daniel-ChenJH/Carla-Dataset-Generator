@@ -179,6 +179,7 @@ class ScenarioManager(object):
             try:
                 self._agent_watchdog.resume()
                 self._agent_watchdog.update()
+                # ego_action这里才是主输入
                 ego_action = self._agent_wrapper()
                 self._agent_watchdog.pause()
 
@@ -189,6 +190,7 @@ class ScenarioManager(object):
             except Exception as e:
                 raise AgentError(e)
 
+            # 对主车应用新行为
             self._watchdog.resume()
             self.ego_vehicles[0].apply_control(ego_action)
 
@@ -222,6 +224,7 @@ class ScenarioManager(object):
                 self._running = False
 
             ego_trans = self.ego_vehicles[0].get_transform()
+            # 固定spectator视角
             self._spectator.set_transform(carla.Transform(ego_trans.location + carla.Location(z=70),
                                                           carla.Rotation(pitch=-90)))
 
