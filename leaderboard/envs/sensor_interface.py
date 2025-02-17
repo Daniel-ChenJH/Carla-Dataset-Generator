@@ -240,6 +240,14 @@ class SpeedometerReader(BaseReader):
             self.speed_f.write('\n')
             self.speed_f.flush()
 
+    def set_all_traffic_light_green(self):
+        actors=self.world.get_actors()
+        light_actor_list=actors.filter('*traffic_light*')
+ 
+        for light_actor in light_actor_list:
+            light_actor.set_state(carla.TrafficLightState.Green)
+            light_actor.freeze(True)
+
 
     def __call__(self):
         """ We convert the vehicle physics information into a convenient dictionary """

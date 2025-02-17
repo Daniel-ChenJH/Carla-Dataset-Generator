@@ -72,7 +72,7 @@ def main():
             print(f"Ignoring route '{route_id}' as it uses an unknown map '{route_town}")
             continue
         elif route_town != prev_town:
-            full_name = os.environ["CARLA_ROOT"].replace("\\", "/") + "/" + MAPS_LOCATIONS[route_town]
+            full_name = os.environ["CARLA_ROOT"].replace('\\','/') + "/" + MAPS_LOCATIONS[route_town]
             with open(full_name, 'r') as f:
                 map_contents = f.read()
             tmap = carla.Map(route_town, map_contents)

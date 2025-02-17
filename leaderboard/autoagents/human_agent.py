@@ -121,6 +121,7 @@ class HumanAgent(AutonomousAgent):
             self._left_mirror,
             self._right_mirror
         )
+
         self._controller = KeyboardControl(path_to_conf_file)
         self._prev_timestamp = 0
 
@@ -219,11 +220,11 @@ class KeyboardControl(object):
         self._steer_cache = 0.0
         self._clock = pygame.time.Clock()
 
-        json_path = r'E:\CARLA\WindowsNoEditor\leaderboard_0426\ego_vehicle_behavior\RouteScenario_1_rep0.json'
+        json_path = 'ego_vehicle_behavior/RouteScenario_0_rep0.json'
         f = open(json_path, 'r', encoding='utf-8')
         content = f.read()
         self.record_dict = json.loads(content)
-        self.record_index = 11
+        self.record_index = 1
 
         # Get the mode
         if path_to_conf_file:
@@ -282,6 +283,10 @@ class KeyboardControl(object):
         return self._control
 
     def _parse_routescenario_control(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return 
+            
         if self.record_index < len(self.record_dict) + 1:
             control = self.record_dict[str(self.record_index)]
             self._control.steer = control['steering']
@@ -290,7 +295,10 @@ class KeyboardControl(object):
             self._control.hand_brake = control['handbrake']
             self._control.gear = control['gear']
             self._control.reverse = (control['gear'] < 0)
+            self._control.manual_gear_shift = True
             self.record_index += 1
+
+
 
     def _parse_vehicle_keys(self, keys, milliseconds):
         """

@@ -164,8 +164,6 @@ class AutonomousAgent(object):
                     record_thread.start()
                     self.record_threadings[i] = record_thread
 
-
-            gt_input_data = {'test':['test_gt_data']}
             for i in ori_input_data.keys():
                 # 添加到指定的Queue
                 # print(i,ori_input_data[i][1].shape)

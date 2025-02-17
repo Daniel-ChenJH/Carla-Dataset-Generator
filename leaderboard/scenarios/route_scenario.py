@@ -340,7 +340,7 @@ class RouteScenario(BasicScenario):
         Searches through the 'scenarios' folder for all the Python classes
         """
         # Path of all scenario at "srunner/scenarios" folder
-        scenarios_list = glob.glob("{}/srunner/scenarios/*.py".format(os.getenv('SCENARIO_RUNNER_ROOT').replace('\\', '/')))
+        scenarios_list = glob.glob("{}/srunner/scenarios/*.py".format(os.getenv('SCENARIO_RUNNER_ROOT', "./").replace('\\','/')))
 
         all_scenario_classes = {}
 
