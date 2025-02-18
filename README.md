@@ -17,7 +17,7 @@ The simulation system is implemented based on the CVPR 2024 CARLA Leaderboard 2.
 ```bash
 cd <CARLA installation directory>
 rm -rf leaderboard
-git clone https://github.com/Daniel-ChenJH/carla_dataset_generator.git
+git clone https://github.com/Daniel-ChenJH/Carla-Dataset-Generator.git
 mv carla_dataset_generator leaderboard
 ```
 
