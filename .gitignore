@@ -5,4 +5,5 @@
 .pydevproject
 *.sh
 *.xml
-record_data/
+# record_data/
+!ego_vehicle_behavior/*.json

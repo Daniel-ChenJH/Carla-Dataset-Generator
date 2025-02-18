@@ -144,7 +144,8 @@ def parse_log_file(file_path):
                     if int(vehicle_data['id']) == int(hero_car_id):
                         # print(f"Frame {frame}: {vehicle_data}")
                         ego_vehicle_movement[frame] = vehicle_data
-                        ego_vehicle_movement[frame]['traffic_lights'] = traffic_lights
+                        # 交通灯数据太多了容易爆内存
+                        # ego_vehicle_movement[frame]['traffic_lights'] = traffic_lights
             
             else:
                 file.seek(data_size, 1)  # 跳过当前packet的数据
@@ -163,7 +164,6 @@ client.set_timeout(20.0)
 world = client.get_world()
 log_file_path = os.path.join(os.getcwd(),"RouteLogs")
 for log in os.listdir(log_file_path):
-    if '0'!=log:continue
     log_dir = os.path.join(log_file_path, log)
     log = os.path.join(log_dir, [i for i in list(os.listdir(log_dir)) if i.startswith('RouteScenario')][0])
     print('Running log: ',log)
