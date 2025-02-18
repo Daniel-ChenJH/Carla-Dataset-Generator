@@ -149,7 +149,7 @@ class AutonomousAgent(object):
         assert ori_input_data[list(ori_input_data.keys())[0]][0] == frame_now
 
         # 数据记录
-        record_data_flag = False
+        record_data_flag = True
         if record_data_flag:
             if not len(self.record_threadings.keys()):
                 self.data_queue={}
